@@ -60,7 +60,7 @@ def _save_last_processed(dt: datetime) -> None:
 
 def run_pipeline(
     sources_path: str = "rss_sources.json",
-    slack_channel: str = "#ai-速報",
+    slack_channel: str = "#ai-news",
     limit: int | None = None,
     no_slack: bool = False,
     today_only: bool = False,
