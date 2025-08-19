@@ -64,28 +64,16 @@ def send_to_slack(channel: str, title: str, url: str, summary: str) -> None:
         }
     ]
     
-    # Also prepare a simple message with just the URL for preview
-    preview_message = f"詳細はこちら: {url}"
-    
     try:
-        # First send the formatted message
+        # Send only the formatted message with embedded link
         resp = client.chat_postMessage(
             channel=channel_id,
             blocks=blocks,
-            text=f"{title}\n\n{summary}\n\n{url}",  # Fallback text
-            unfurl_links=False  # Disable preview in main message
+            text=f"{title}\n\n{summary}",  # Fallback text without URL
+            unfurl_links=False  # Keep clean format
         )
         
         if resp and resp.get("ok"):
             print(f"Slack posted: channel={channel} title={title[:40]}")
-            
-            # Then send URL separately for link preview
-            client.chat_postMessage(
-                channel=channel_id,
-                text=url,
-                unfurl_links=True,  # Enable preview
-                unfurl_media=True   # Enable media preview
-            )
-            print(f"Link preview posted: {url[:50]}")
     except Exception as e:
         print(f"Failed to send Slack message: {e}") 
