@@ -1,5 +1,13 @@
 [
   "https://venturebeat.com/category/ai/feed/",
   "https://www.marktechpost.com/feed/",
-  "https://openai.com/blog/rss"
+  "https://openai.com/blog/rss",
+  "https://artificialintelligence-news.com/feed/",
+  "https://deepmind.google/blog/rss.xml",
+  "https://blog.google/technology/ai/rss/",
+  "https://huggingface.co/blog/feed.xml",
+  "https://blogs.microsoft.com/feed/",
+  "https://blog.research.google/feeds/posts/default",
+  "https://machinelearningmastery.com/feed/",
+  "https://towardsdatascience.com/feed"
 ]

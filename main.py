@@ -156,7 +156,7 @@ if __name__ == "__main__":
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--no-slack", action="store_true")
     parser.add_argument("--today-only", action="store_true")
-    parser.add_argument("--slack-channel", type=str, default="#ai-速報")
+    parser.add_argument("--slack-channel", type=str, default=os.getenv("SLACK_CHANNEL", "#ai-news"))
     parser.add_argument("--summary-max-chars", type=int, default=400)
     parser.add_argument("--summary-min-chars", type=int, default=300)
     parser.add_argument("--summary-max-sentences", type=int, default=4)
