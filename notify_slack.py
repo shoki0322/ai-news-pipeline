@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Optional
+from typing import Optional, List
 
 try:
     from slack_sdk import WebClient  # type: ignore
@@ -10,22 +10,61 @@ except Exception:
 
 CHANNEL_ID_RE = re.compile(r"^[CG][A-Z0-9]+$")
 
+# Global round-robin pool for multiple bot tokens
+_CLIENTS: List["WebClient"] = []
+_CLIENT_INDEX: int = 0
+
+
+def _initialize_clients_from_env() -> None:
+    global _CLIENTS
+    if WebClient is None:
+        return
+    if _CLIENTS:
+        return
+
+    # Prefer multiple tokens if provided
+    raw_multi = os.getenv("SLACK_BOT_TOKENS")
+    tokens: List[str] = []
+    if raw_multi:
+        tokens = [t.strip() for t in raw_multi.split(",") if t.strip()]
+    else:
+        single = os.getenv("SLACK_BOT_TOKEN")
+        if single:
+            tokens = [single.strip()]
+
+    for t in tokens:
+        try:
+            _CLIENTS.append(WebClient(token=t))
+        except Exception as e:
+            print(f"Failed to initialize Slack client for one token: {e}")
+
 
 def _get_slack_client() -> Optional["WebClient"]:
-    token = os.getenv("SLACK_BOT_TOKEN")
-    if not token or WebClient is None:
+    global _CLIENT_INDEX
+    _initialize_clients_from_env()
+    if not _CLIENTS:
         return None
-    try:
-        return WebClient(token=token)
-    except Exception as e:
-        print(f"Failed to initialize Slack client: {e}")
-        return None
+    # Round-robin selection
+    client = _CLIENTS[_CLIENT_INDEX % len(_CLIENTS)]
+    _CLIENT_INDEX = (_CLIENT_INDEX + 1) % len(_CLIENTS)
+    return client
 
 
 def _resolve_channel_id(client: "WebClient", channel: str) -> Optional[str]:
     if CHANNEL_ID_RE.match(channel):
         return channel
     name = channel.lstrip("#").strip()
+    # 1) Env override for cases without conversations:read scope
+    # Global override
+    env_override = os.getenv("SLACK_CHANNEL_ID")
+    if env_override and CHANNEL_ID_RE.match(env_override):
+        return env_override
+    # Per-name override: SLACK_CHANNEL_ID__<NAME> (uppercase, non-alnum -> _)
+    safe_key = re.sub(r"[^A-Za-z0-9]", "_", name).upper()
+    per_name_key = f"SLACK_CHANNEL_ID__{safe_key}"
+    env_per_name = os.getenv(per_name_key)
+    if env_per_name and CHANNEL_ID_RE.match(env_per_name):
+        return env_per_name
     # Paginate through channels the bot can see (public + private it belongs to)
     cursor = None
     try:
@@ -53,15 +92,17 @@ def send_to_slack(channel: str, title: str, url: str, summary: str) -> None:
     if not channel_id:
         return
 
-    # Format with blocks for better structure
+    # Format with blocks for better structure and clear separators
     blocks = [
+        {"type": "divider"},
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
                 "text": f"📰 *{title}*\n\n{summary}\n\n<{url}|📖 記事を読む>"
             }
-        }
+        },
+        {"type": "divider"},
     ]
     
     try:

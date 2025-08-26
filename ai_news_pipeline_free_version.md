@@ -121,8 +121,8 @@ import os
 
 client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
-def send_to_slack(channel, title, url, summary):
-message = f"_{title}_\n{summary}\n<{url}|記事リンク>"
+def send*to_slack(channel, title, url, summary):
+message = f"*{title}\_\n{summary}\n<{url}|記事リンク>"
 client.chat_postMessage(channel=channel, text=message)
 ⑧ メインスクリプト
 main.py
@@ -149,7 +149,7 @@ for a in articles:
 ja_title = translate_text(a["title"])
 summary = summarize(translate_text(a["title"]))
 save_to_notion(ja_title, a["link"], summary, a["published"])
-send_to_slack("#ai-速報", ja_title, a["link"], summary)
+send_to_slack("#ai-news", ja_title, a["link"], summary)
 ⑨ GitHub Actions 自動化
 .github/workflows/news.yml
 

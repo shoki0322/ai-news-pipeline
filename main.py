@@ -65,7 +65,7 @@ def run_pipeline(
     no_slack: bool = False,
     today_only: bool = False,
     summary_max_chars: int = 300,
-    summary_min_chars: int = 160,
+    summary_min_chars: int = 220,
     summary_max_sentences: int = 4,
 ) -> List[Dict[str, str]]:
     with open(sources_path, "r", encoding="utf-8") as f:
@@ -117,14 +117,19 @@ def run_pipeline(
         link = article.get("link", "")
         published = article.get("published", "")
         content = article.get("content", "") or title
+        source = article.get("source", "")
 
         # Skip if URL already exists in Notion
         if url_exists_in_notion(link):
             continue
 
-        ja_title = translate_text(title)
+        from translate import translate_headline
+        ja_title = translate_headline(title)
+        # Prefix source name to title if available
+        if source:
+            ja_title = f"[{source}] {ja_title}"
         summary_ja = summarize(
-            translate_text(content),
+            content,
             max_chars=summary_max_chars,
             min_chars=summary_min_chars,
             max_sentences=summary_max_sentences,
@@ -140,6 +145,7 @@ def run_pipeline(
                 "url": link,
                 "summary_ja": summary_ja,
                 "published": published,
+                "source": source,
             }
         )
 
@@ -157,8 +163,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-slack", action="store_true")
     parser.add_argument("--today-only", action="store_true")
     parser.add_argument("--slack-channel", type=str, default=os.getenv("SLACK_CHANNEL", "#ai-news"))
-    parser.add_argument("--summary-max-chars", type=int, default=400)
-    parser.add_argument("--summary-min-chars", type=int, default=300)
+    parser.add_argument("--summary-max-chars", type=int, default=300)
+    parser.add_argument("--summary-min-chars", type=int, default=220)
     parser.add_argument("--summary-max-sentences", type=int, default=4)
     args = parser.parse_args()
     run_pipeline(

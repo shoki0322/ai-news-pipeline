@@ -5,6 +5,45 @@ from datetime import datetime, timezone
 from typing import List, Dict
 
 import feedparser
+from urllib.parse import urlparse
+def _normalize_source_name(feed_url: str, candidate: str) -> str:
+    """Return a stable, human-friendly source name.
+    Prefer known mappings. If the feed-provided title is too generic, fall back to domain.
+    """
+    try:
+        p = urlparse(feed_url)
+        host = (p.hostname or feed_url).lower().replace("www.", "")
+    except Exception:
+        host = feed_url
+
+    generic = {"ai", "blog", "news"}
+    if not candidate or len(candidate.strip()) < 4 or candidate.strip().lower() in generic:
+        candidate = ""
+
+    # Known host mappings
+    domain_map = {
+        "openai.com": "OpenAI Blog",
+        "blog.google": "Google AI Blog",
+        "deepmind.google": "Google DeepMind Blog",
+        "huggingface.co": "Hugging Face Blog",
+        "blogs.microsoft.com": "Microsoft Blog",
+        "artificialintelligence-news.com": "AI News",
+        "venturebeat.com": "VentureBeat",
+        "marktechpost.com": "MarkTechPost",
+        "towardsdatascience.com": "Towards Data Science",
+        "machinelearningmastery.com": "Machine Learning Mastery",
+    }
+    # Special-case Google AI path
+    try:
+        if host == "blog.google" and "/technology/ai" in urlparse(feed_url).path:
+            return "Google AI Blog"
+    except Exception:
+        pass
+
+    if host in domain_map:
+        return domain_map[host]
+    # Fallback to feed-provided candidate if reasonable; otherwise use hostname
+    return candidate or host
 
 
 def _strip_html(raw: str) -> str:
@@ -40,6 +79,12 @@ def fetch_rss_articles(urls: List[str]) -> List[Dict[str, str]]:
     articles: List[Dict[str, str]] = []
     for url in urls:
         feed = feedparser.parse(url)
+        # Determine human-readable source name from feed metadata or fallback to domain
+        try:
+            source_title = getattr(getattr(feed, "feed", {}), "title", "")
+        except Exception:
+            source_title = ""
+        source_name = _normalize_source_name(url, source_title)
         for entry in getattr(feed, "entries", []):
             published_raw = entry.get("published") or entry.get("updated")
             if published_raw:
@@ -61,6 +106,7 @@ def fetch_rss_articles(urls: List[str]) -> List[Dict[str, str]]:
                     "link": getattr(entry, "link", ""),
                     "published": published_iso,
                     "content": _extract_entry_content(entry),
+                    "source": source_name,
                 }
             )
     return articles
