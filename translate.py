@@ -69,6 +69,22 @@ def _postprocess_japanese_headline(text: str) -> str:
     return t
 
 
+def _finalize_headline(t: str) -> str:
+    if not t:
+        return t
+    s = t.strip()
+    # Only normalize trailing punctuation; do NOT cut back to clause separator to avoid truncation
+    s = re.sub(r"[\s　]+$", "", s)
+    s = re.sub(r"[。．!！?？]+$", "", s)
+    s = re.sub(r"[、，・,]+$", "", s)
+    # If ends with an incomplete progressive form, complete it
+    s = re.sub(r"してい$", "している", s)
+    # If ends with conjunctive remnants, normalize to dictionary form when safe
+    s = re.sub(r"して$", "する", s)
+    s = re.sub(r"し$", "する", s)
+    s = re.sub(r"で$", "", s)
+    return s
+
 def translate_text(text: str) -> str:
     if not text:
         return text
@@ -119,8 +135,8 @@ def translate_headline(title_en: str) -> str:
     if not title_en:
         return title_en
     t = title_en.strip()
-    # 英語のサイト接尾辞（|, -, —）を左側に寄せて除去
-    parts = re.split(r"\s*[|\-—–]\s+", t)
+    # 英語のサイト接尾辞（|, -, —）を左側に寄せて除去（ハイフンに空白を要件化）
+    parts = re.split(r"\s*(?:\||[-—–])\s+", t)
     if parts:
         # 最長の左側セグメントを優先しつつ、短すぎる場合は元を維持
         candidate = parts[0].strip()
@@ -128,4 +144,6 @@ def translate_headline(title_en: str) -> str:
             t = candidate
     # 翻訳→日本語見出し調
     ja = translate_text(t)
+    # 句読点・約物正規化とぶら下がり除去
+    ja = _finalize_headline(ja)
     return _postprocess_japanese_headline(ja)

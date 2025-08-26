@@ -109,7 +109,7 @@ def send_to_slack(channel: str, title: str, url: str, summary: str, category: Op
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"📰 *{title}*{meta_line}\n\n{summary}\n\n<{url}|📖 記事を読む>"
+                "text": f"📰 *{title}*\n{meta_line}\n\n{summary}\n\n<{url}|📖 記事を読む>"
             }
         },
         {"type": "divider"},
@@ -125,6 +125,6 @@ def send_to_slack(channel: str, title: str, url: str, summary: str, category: Op
         )
         
         if resp and resp.get("ok"):
-            print(f"Slack posted: channel={channel} title={title[:40]}")
+            print(f"Slack posted: channel={channel} title={title}")
     except Exception as e:
         print(f"Failed to send Slack message: {e}") 

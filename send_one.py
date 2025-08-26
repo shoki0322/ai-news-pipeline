@@ -62,6 +62,11 @@ def main() -> int:
     args = ap.parse_args()
 
     title_en, content_en, source = _extract_text_from_url(args.url)
+    # Ensure long English titles don't get truncated mid-clause by trimming to 180 chars at word boundary first
+    if len(title_en) > 180:
+        cut = title_en.rfind(" ", 0, 180)
+        if cut > 0:
+            title_en = title_en[:cut]
     ja_title = translate_headline(title_en)
     summary_ja = summarize(content_en, max_chars=args.summary_max_chars, min_chars=args.summary_min_chars, max_sentences=args.summary_max_sentences)
     if source:
