@@ -13,6 +13,7 @@ from translate import translate_text
 from summarize import summarize
 from save_notion import save_to_notion, url_exists_in_notion
 from notify_slack import send_to_slack
+from score import score_article
 
 
 def _parse_to_utc(dt_str: str) -> Optional[datetime]:
@@ -135,9 +136,12 @@ def run_pipeline(
             max_sentences=summary_max_sentences,
         )
 
+        # Score
+        s, primary_cat, _ = score_article(title, content, published)
+
         save_to_notion(ja_title, link, summary_ja, published)
         if not no_slack:
-            send_to_slack(slack_channel, ja_title, link, summary_ja)
+            send_to_slack(slack_channel, ja_title, link, summary_ja, primary_cat, s)
 
         processed.append(
             {

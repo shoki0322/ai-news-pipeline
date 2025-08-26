@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from translate import translate_headline
 from summarize import summarize
 from notify_slack import send_to_slack
+from score import score_article
 
 
 def _extract_text_from_url(url: str) -> tuple[str, str, str]:
@@ -65,7 +66,8 @@ def main() -> int:
     summary_ja = summarize(content_en, max_chars=args.summary_max_chars, min_chars=args.summary_min_chars, max_sentences=args.summary_max_sentences)
     if source:
         ja_title = f"[{source}] {ja_title}"
-    send_to_slack(args.channel, ja_title, args.url, summary_ja)
+    s, primary_cat, _ = score_article(title_en, content_en, None)
+    send_to_slack(args.channel, ja_title, args.url, summary_ja, primary_cat, s)
     print("Posted:", ja_title[:80])
     return 0
 

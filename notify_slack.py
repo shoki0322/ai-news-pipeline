@@ -82,7 +82,7 @@ def _resolve_channel_id(client: "WebClient", channel: str) -> Optional[str]:
     return None
 
 
-def send_to_slack(channel: str, title: str, url: str, summary: str) -> None:
+def send_to_slack(channel: str, title: str, url: str, summary: str, category: Optional[str] = None, score: Optional[int] = None) -> None:
     client = _get_slack_client()
     if not client:
         print("Slack env not set; skipping Slack notification.")
@@ -93,12 +93,23 @@ def send_to_slack(channel: str, title: str, url: str, summary: str) -> None:
         return
 
     # Format with blocks for better structure and clear separators
+    # Optional metadata line under the title
+    meta_line = ""
+    if category is not None or score is not None:
+        parts = []
+        if category:
+            parts.append(f"カテゴリ: *{category}*")
+        if score is not None:
+            parts.append(f"スコア: *{score}* /10")
+        if parts:
+            meta_line = "\n" + " ・ ".join(parts)
+
     blocks = [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"📰 *{title}*\n\n{summary}"
+                "text": f"📰 *{title}*{meta_line}\n\n{summary}\n\n<{url}|📖 記事を読む>"
             }
         },
         {"type": "divider"},

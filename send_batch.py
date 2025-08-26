@@ -14,6 +14,7 @@ from translate import translate_headline
 from summarize import summarize
 from notify_slack import send_to_slack
 from main import _parse_to_utc
+from score import score_article
 
 
 def _load_articles() -> List[Dict[str, str]]:
@@ -98,7 +99,8 @@ def main() -> int:
             )
             if source:
                 ja_title = f"[{source}] {ja_title}"
-            send_to_slack(args.channel, ja_title, link, summary_ja)
+            s, primary_cat, _ = score_article(title, content, a.get("published", ""))
+            send_to_slack(args.channel, ja_title, link, summary_ja, primary_cat, s)
             sent += 1
             print(f"[{idx}/{len(targets)}] Sent: {ja_title[:60]} …")
             time.sleep(args.sleep)
