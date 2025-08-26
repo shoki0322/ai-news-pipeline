@@ -39,7 +39,7 @@ def _simple_summarize(text: str, max_chars: int = 300, min_chars: int = 160, max
             break
 
     summary = "".join(result)
-    # Strictly enforce the upper bound without ellipsis; try to end at sentence boundary
+    # Strictly enforce the upper bound without ellipsis; try to end at safe boundary (sentence/phrase)
     if len(summary) > max_chars:
         # Try dropping the last sentence if that keeps within bounds and above min_chars
         while len(summary) > max_chars and len(result) > 1:
@@ -48,12 +48,19 @@ def _simple_summarize(text: str, max_chars: int = 300, min_chars: int = 160, max
             if len(summary) >= min_chars:
                 break
         if len(summary) > max_chars:
-            # Hard trim but avoid adding ellipsis
+            # Hard trim but avoid adding ellipsis; cut at safe boundary if possible
             trimmed = summary[:max_chars].rstrip()
-            # If there is a Japanese sentence terminator within the limit, cut to it
-            cut_pos = max(trimmed.rfind("。"), trimmed.rfind("．"))
-            if cut_pos >= 0 and cut_pos >= min_chars * 2 // 3:
-                summary = trimmed[: cut_pos + 1]
+            # Prefer sentence enders, then Japanese comma, then whitespace, then fallback
+            ender_pos = max(trimmed.rfind(c) for c in "。．！？!?")
+            comma_pos = trimmed.rfind("、")
+            space_pos = trimmed.rfind(" ")
+            cut_pos = max(ender_pos, comma_pos, space_pos)
+            if cut_pos is not None and cut_pos >= 0:
+                # Include the punctuation for sentence enders
+                if trimmed[cut_pos:cut_pos+1] in "。．！？!?":
+                    summary = trimmed[: cut_pos + 1]
+                else:
+                    summary = trimmed[: cut_pos].rstrip()
             else:
                 summary = trimmed
     # If it's still shorter than min_chars and we can extend from original text, extend safely
@@ -62,11 +69,32 @@ def _simple_summarize(text: str, max_chars: int = 300, min_chars: int = 160, max
         combined = (summary + extra)
         if len(combined) > max_chars:
             combined = combined[:max_chars].rstrip()
-            # Try to cut at sentence boundary if possible
-            cut_pos = max(combined.rfind("。"), combined.rfind("．"))
-            if cut_pos >= 0 and cut_pos >= min_chars * 2 // 3:
-                combined = combined[: cut_pos + 1]
+            # Try to cut at safe boundary if possible
+            candidates = [
+                max(combined.rfind(c) for c in "。．！？!?"),
+                combined.rfind("、"),
+                combined.rfind(" "),
+            ]
+            cut_pos = max([p for p in candidates if p is not None])
+            if cut_pos is not None and cut_pos >= max(min_chars * 2 // 3, 40):
+                if combined[cut_pos:cut_pos+1] in "。．！？!?":
+                    combined = combined[: cut_pos + 1]
+                else:
+                    combined = combined[: cut_pos].rstrip()
         summary = combined
+    # Ensure the summary ends cleanly at a sentence boundary; normalize trailing punctuation
+    summary = summary.strip()
+    # If there is any sentence ender, prefer cutting there
+    last_ender = max(summary.rfind(c) for c in "。．！？!?")
+    if last_ender >= 0 and last_ender < len(summary) - 1:
+        summary = summary[: last_ender + 1]
+    # Remove trailing connectors/particles before adding period
+    summary = re.sub(r"[、，,・\-]+$", "", summary).rstrip()
+    summary = re.sub(r"(の|が|に|で|と|や|か|は|も|を|へ|より|から|まで|など)$", "", summary).rstrip()
+    # Collapse trailing punctuation to a single Japanese period
+    summary = re.sub(r"[。．.!?！？]+$", "。", summary)
+    if not re.search(r"[。．]$", summary):
+        summary = summary.rstrip() + "。"
     return summary
 
 

@@ -94,12 +94,11 @@ def send_to_slack(channel: str, title: str, url: str, summary: str) -> None:
 
     # Format with blocks for better structure and clear separators
     blocks = [
-        {"type": "divider"},
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"📰 *{title}*\n\n{summary}\n\n<{url}|📖 記事を読む>"
+                "text": f"📰 *{title}*\n\n{summary}"
             }
         },
         {"type": "divider"},
@@ -110,7 +109,7 @@ def send_to_slack(channel: str, title: str, url: str, summary: str) -> None:
         resp = client.chat_postMessage(
             channel=channel_id,
             blocks=blocks,
-            text=f"{title}\n\n{summary}",  # Fallback text without URL
+            text=f"{title}\n\n{summary}",  # Fallback text (no URL)
             unfurl_links=False  # Keep clean format
         )
         
