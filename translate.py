@@ -1,149 +1,67 @@
 import os
-import re
 from openai import OpenAI
 from deep_translator import GoogleTranslator
 
 
-def _postprocess_japanese_headline(text: str) -> str:
+def translate_headline(title_en: str, max_len: int = 60) -> str:
     """
-    日本語訳のタイトル末尾の「します」「しました」「です」「ます」「でしょう」などを
-    不自然でない範囲で簡潔な見出し調へ整える。
-    例: 「〜を発表しました」→「〜を発表」, 「〜が開始します」→「〜開始」
-    過度な変形は避け、基本は終止形・名詞止めを優先。
+    英語タイトルを日本語に翻訳し、自然な見出し調に整形して返す。
+    GPTを優先し、失敗時はGoogle翻訳にフォールバック。
     """
-    if not text:
-        return text
-    t = text.strip()
-    # サイト接尾辞（| や - 区切り）を除去（ハイフン前後に空白がある場合のみ＝GPT-5などは温存）
-    t = re.sub(r"\s*(?:\||｜|[-—–])\s+[^|｜\-—–]+$", "", t)
-    # 先頭のシリーズ名などを除去（例: VB AIインパクトシリーズ：）
-    t = re.sub(r"^(?:VB\s*)?AIインパクトシリーズ[:：]\s*", "", t)
-    # 末尾の丁寧語より先に「でき」系を見出し調へ（可能化）
-    t = re.sub(r"できますか$", "できる", t)
-    t = re.sub(r"できます$", "できる", t)
-    t = re.sub(r"できました$", "できた", t)
-    # 見出し調変換（末尾の自然な名詞止め・可能形へ）
-    # 具体パターンを先にマッチ
-    t = re.sub(r"を(.+?)に変えることができる$", r"を\1に変換可能に", t)
-    t = re.sub(r"を(.+?)に変更できる$", r"を\1に変更可能に", t)
-    t = re.sub(r"を(.+?)に構造化できる$", r"を\1に構造化可能に", t)
-    t = re.sub(r"を構造化データに変えることができる$", "を構造化データに変換可能に", t)
-    t = re.sub(r"を構造化(された)?データに変えることができる$", "を構造化データに変換可能に", t)
-    # 汎用置換（最後に）
-    t = re.sub(r"ことができる$", "可能に", t)
-    t = re.sub(r"できる$", "可能に", t)
-    # 断定・名詞止め寄り
-    t = re.sub(r"に変える$", "に変換", t)
-    # 単語末補完（翻訳揺れで末尾が「でき」で止まるケース）
-    if t.endswith("でき"):
-        t = t + "る"
-    # 自然な言い換え
-    t = re.sub(r"管理できる$", "管理可能", t)
-    t = re.sub(r"統治できる$", "ガバナンス可能", t)
-    t = re.sub(r"を実現する$", "実現", t)
-    # 末尾の丁寧語を簡易に削る
-    t = re.sub(r"(を)?発表しました$", "を発表", t)
-    t = re.sub(r"(を)?発表します$", "を発表", t)
-    t = re.sub(r"開始しました$", "開始", t)
-    t = re.sub(r"開始します$", "開始", t)
-    t = re.sub(r"提供を開始しました$", "提供開始", t)
-    t = re.sub(r"提供します$", "提供", t)
-    t = re.sub(r"公開しました$", "公開", t)
-    t = re.sub(r"公開します$", "公開", t)
-    t = re.sub(r"発表しました$", "発表", t)
-    t = re.sub(r"発表します$", "発表", t)
-    t = re.sub(r"リリースしました$", "リリース", t)
-    t = re.sub(r"リリースします$", "リリース", t)
-    t = re.sub(r"実現します$", "実現", t)
-    # 疑問形を断定系に寄せる
-    t = re.sub(r"か[?？]$", "", t)
-    t = re.sub(r"[?？]$", "", t)
-    # 汎用的な丁寧語語尾を弱めに刈り取る（語感が崩れない範囲）
-    t = re.sub(r"(でした|でした。)$", "", t)
-    t = re.sub(r"(ます|ます。)$", "", t)
-    t = re.sub(r"(です|です。)$", "", t)
-    # 不完全な「…ことができ」で終わっていれば補完
-    t = re.sub(r"ことができ$", "ことができる", t)
-    # 語尾は句点を残さず見出し調に（余計な約物も除去）
-    t = t.rstrip("。．. !！")
-    return t
+    if not title_en:
+        return ""
 
-
-def _finalize_headline(t: str) -> str:
-    if not t:
-        return t
-    s = t.strip()
-    # Only normalize trailing punctuation; do NOT cut back to clause separator to avoid truncation
-    s = re.sub(r"[\s　]+$", "", s)
-    s = re.sub(r"[。．!！?？]+$", "", s)
-    s = re.sub(r"[、，・,]+$", "", s)
-    # If ends with an incomplete progressive form, complete it
-    s = re.sub(r"してい$", "している", s)
-    # If ends with conjunctive remnants, normalize to dictionary form when safe
-    s = re.sub(r"して$", "する", s)
-    s = re.sub(r"し$", "する", s)
-    s = re.sub(r"で$", "", s)
-    return s
-
-def translate_text(text: str) -> str:
-    if not text:
-        return text
-    
-    # Try OpenAI API first
     api_key = os.getenv("OPENAI_API_KEY")
     if api_key:
         try:
             client = OpenAI(api_key=api_key)
+            prompt = (
+                "以下の英文タイトルを日本語に翻訳してください。"
+                "翻訳は直訳ではなく、新聞やニュースサイトの見出しのように簡潔で力強い表現にしてください。"
+                f"{max_len}文字以内を目安に短くまとめてください。"
+                "文末は「〜を発表」「〜開始」「〜公開」のように名詞止め・見出し調にしてください。\n\n"
+                f"Title: {title_en}"
+            )
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are a professional translator. Translate the following text to Japanese. Provide only the translation without any explanation."},
-                    {"role": "user", "content": text}
+                    {"role": "system", "content": "You are a professional Japanese news editor."},
+                    {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                max_tokens=1000
+                temperature=0.2
             )
-            translated = response.choices[0].message.content
-            if translated:
-                return _postprocess_japanese_headline(translated.strip())
+            ja = response.choices[0].message.content.strip()
+            # 長すぎる場合はカット
+            if len(ja) > max_len:
+                ja = ja[:max_len].rstrip("。．. !！?？、，")
+            return ja
         except Exception as e:
             print(f"OpenAI translation error: {e}, falling back to Google Translate")
-    
-    # Fallback to Google Translate
+
+    # Fallback: Google Translate
     try:
-        return _postprocess_japanese_headline(GoogleTranslator(source="auto", target="ja").translate(text))
+        ja = GoogleTranslator(source="auto", target="ja").translate(title_en)
+        if len(ja) > max_len:
+            ja = ja[:max_len].rstrip("。．. !！?？、，")
+        return ja
     except Exception as e:
-        print(f"Translation error: {e}")
-        return text
-
-
-def translate_text_long(text: str, chunk_size: int = 3500) -> str:
-    if not text:
-        return text
-    # 粗くチャンク分割（単純に文字数基準）
-    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
-    results: list[str] = []
-    for ch in chunks:
-        try:
-            results.append(translate_text(ch))
-        except Exception:
-            results.append(ch)
-    return "".join(results)
-
-
-def translate_headline(title_en: str) -> str:
-    if not title_en:
+        print(f"Google Translate error: {e}")
         return title_en
-    t = title_en.strip()
-    # 英語のサイト接尾辞（|, -, —）を左側に寄せて除去（ハイフンに空白を要件化）
-    parts = re.split(r"\s*(?:\||[-—–])\s+", t)
-    if parts:
-        # 最長の左側セグメントを優先しつつ、短すぎる場合は元を維持
-        candidate = parts[0].strip()
-        if len(candidate) >= 8:
-            t = candidate
-    # 翻訳→日本語見出し調
-    ja = translate_text(t)
-    # 句読点・約物正規化とぶら下がり除去
-    ja = _finalize_headline(ja)
-    return _postprocess_japanese_headline(ja)
+
+
+def translate_text_long(text: str, chunk_size: int = 3000) -> str:
+    """長文を日本語へ安定して翻訳（Google翻訳ベース、分割結合）。"""
+    if not text:
+        return ""
+    try:
+        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+        out_parts: list[str] = []
+        for ch in chunks:
+            out_parts.append(GoogleTranslator(source="auto", target="ja").translate(ch))
+        ja = "".join(out_parts)
+        # 余分な空白を正規化
+        ja = " ".join(ja.split())
+        return ja
+    except Exception as e:
+        print(f"Long translation error: {e}")
+        return text

@@ -54,18 +54,16 @@ def _resolve_channel_id(client: "WebClient", channel: str) -> Optional[str]:
     if CHANNEL_ID_RE.match(channel):
         return channel
     name = channel.lstrip("#").strip()
-    # 1) Env override for cases without conversations:read scope
-    # Global override
+    # 1) Env override
     env_override = os.getenv("SLACK_CHANNEL_ID")
     if env_override and CHANNEL_ID_RE.match(env_override):
         return env_override
-    # Per-name override: SLACK_CHANNEL_ID__<NAME> (uppercase, non-alnum -> _)
     safe_key = re.sub(r"[^A-Za-z0-9]", "_", name).upper()
     per_name_key = f"SLACK_CHANNEL_ID__{safe_key}"
     env_per_name = os.getenv(per_name_key)
     if env_per_name and CHANNEL_ID_RE.match(env_per_name):
         return env_per_name
-    # Paginate through channels the bot can see (public + private it belongs to)
+    # Paginate through channels
     cursor = None
     try:
         while True:
@@ -78,11 +76,20 @@ def _resolve_channel_id(client: "WebClient", channel: str) -> Optional[str]:
                 break
     except Exception as e:
         print(f"Failed to list channels: {e}")
-    print(f"Slack channel not found or bot not a member: {channel}. Invite the bot to the channel or provide a channel ID.")
+    print(f"Slack channel not found: {channel}")
     return None
 
 
-def send_to_slack(channel: str, title: str, url: str, summary: str, category: Optional[str] = None, score: Optional[int] = None) -> None:
+def send_to_slack(
+    channel: str,
+    title: str,
+    url: str,
+    points: List[str],
+    category: Optional[str] = None,
+    score: Optional[int] = None,
+    source: Optional[str] = None,
+    published: Optional[str] = None,
+) -> None:
     client = _get_slack_client()
     if not client:
         print("Slack env not set; skipping Slack notification.")
@@ -92,39 +99,75 @@ def send_to_slack(channel: str, title: str, url: str, summary: str, category: Op
     if not channel_id:
         return
 
-    # Format with blocks for better structure and clear separators
-    # Optional metadata line under the title
-    meta_line = ""
-    if category is not None or score is not None:
-        parts = []
-        if category:
-            parts.append(f"カテゴリ: *{category}*")
-        if score is not None:
-            parts.append(f"スコア: *{score}* /10")
-        if parts:
-            meta_line = "\n" + " ・ ".join(parts)
+    # メタ情報
+    context_elements: List[dict] = []
+    parts = []
+    if category:
+        parts.append(f"カテゴリ: *{category}*")
+    if score is not None:
+        parts.append(f"スコア: *{score}* /10")
+    if parts:
+        context_elements.append({"type": "mrkdwn", "text": " ・ ".join(parts)})
+    if source:
+        context_elements.append({"type": "mrkdwn", "text": f"元メディア: {source}"})
+    if published:
+        context_elements.append({"type": "mrkdwn", "text": f"公開日時: {published}"})
+
+    # 要点を1つの文字列にまとめる
+    bullets = "\n".join(points) if points else "（要約なし）"
 
     blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"📰 *{title}*\n{meta_line}\n\n{summary}\n\n<{url}|📖 記事を読む>"
-            }
-        },
-        {"type": "divider"},
+        {"type": "header", "text": {"type": "plain_text", "text": f"🗞️ {title}", "emoji": True}},
     ]
-    
+    if context_elements:
+        blocks.append({"type": "context", "elements": context_elements})
+    # 箇条書きは見本通りに1ブロック化（• 記号、最大5点）
+    normalized_points: List[str] = []
+    for pt in points[:5]:
+        t = pt.strip()
+        if not t:
+            continue
+        # 英字のみの断片は除外
+        if re.fullmatch(r"[A-Za-z\s,.]+", t):
+            continue
+        if t.startswith(("・", "-", "*")):
+            t = t.lstrip("・*- ")
+        # 1行120字を上限に安全トリム
+        if len(t) > 120:
+            t = t[:120].rstrip()
+        normalized_points.append(f"• {t}")
+    bullets_text = "\n".join(normalized_points) if normalized_points else "• 要点なし"
+    blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"*要点*\n{bullets_text}"}})
+    blocks.append(
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "📖 記事を読む"},
+                    "url": url,
+                    "style": "primary",
+                }
+            ],
+        }
+    )
+    # 元メディア/公開日時セクション（指定があれば）
+    meta_lines: List[str] = []
+    if published:
+        meta_lines.append(f"公開日時\n{published}")
+    if meta_lines:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "\n\n".join(meta_lines)}})
+    blocks.append({"type": "divider"})
+
     try:
-        # Send only the formatted message with embedded link
         resp = client.chat_postMessage(
             channel=channel_id,
             blocks=blocks,
-            text=f"{title}\n\n{summary}",  # Fallback text (no URL)
-            unfurl_links=False  # Keep clean format
+            text=f"{title}\n" + bullets,  # Fallback
+            unfurl_links=False,
+            unfurl_media=False,
         )
-        
         if resp and resp.get("ok"):
             print(f"Slack posted: channel={channel} title={title}")
     except Exception as e:
-        print(f"Failed to send Slack message: {e}") 
+        print(f"Failed to send Slack message: {e}")

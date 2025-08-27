@@ -4,6 +4,7 @@ import sys
 from urllib.parse import urlparse
 
 import requests
+import re
 from bs4 import BeautifulSoup  # lightweight HTML text extraction
 from readability import Document
 
@@ -15,7 +16,7 @@ from notify_slack import send_to_slack
 from score import score_article
 
 
-def _extract_text_from_url(url: str) -> tuple[str, str, str]:
+def _extract_text_from_url(url: str) -> tuple[str, str, str, str | None]:
     resp = requests.get(url, timeout=20, headers={
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9,ja;q=0.8"
@@ -35,6 +36,7 @@ def _extract_text_from_url(url: str) -> tuple[str, str, str]:
         title = soup.title.get_text(strip=True) if soup.title else url
     # Try OpenGraph site_name for better source labeling
     og_site = soup.find("meta", property="og:site_name")
+    og_pub = soup.find("meta", property="article:published_time") or soup.find("meta", attrs={"name": "pubdate"})
     if og_site and og_site.get("content"):
         source = og_site.get("content").strip()
     else:
@@ -43,7 +45,8 @@ def _extract_text_from_url(url: str) -> tuple[str, str, str]:
     for tag in soup(["script", "style", "noscript", "header", "footer", "svg", "img", "aside", "nav"]):
         tag.decompose()
     text = " ".join(soup.get_text(" ").split())
-    return title, text, source
+    published = og_pub.get("content").strip() if og_pub and og_pub.get("content") else None
+    return title, text, source, published
 
 
 def main() -> int:
@@ -61,18 +64,24 @@ def main() -> int:
     ap.add_argument("--summary-max-sentences", type=int, default=4)
     args = ap.parse_args()
 
-    title_en, content_en, source = _extract_text_from_url(args.url)
+    title_en, content_en, source, published = _extract_text_from_url(args.url)
     # Ensure long English titles don't get truncated mid-clause by trimming to 180 chars at word boundary first
     if len(title_en) > 180:
         cut = title_en.rfind(" ", 0, 180)
         if cut > 0:
             title_en = title_en[:cut]
     ja_title = translate_headline(title_en)
-    summary_ja = summarize(content_en, max_chars=args.summary_max_chars, min_chars=args.summary_min_chars, max_sentences=args.summary_max_sentences)
-    if source:
-        ja_title = f"[{source}] {ja_title}"
+    bullets = summarize(content_en, max_items=5)
+    # 万一英語が混入した場合を簡易フィルタ（半角のみ長連続の行を除去）
+    clean = []
+    for b in bullets:
+        body = b.lstrip("・*- ")
+        if len(re.findall(r"[A-Za-z]{6,}", body)) > 0 and len(re.findall(r"[\u3040-\u30ff\u4e00-\u9faf]", body)) == 0:
+            continue
+        clean.append(b)
+    bullets = clean or bullets
     s, primary_cat, _ = score_article(title_en, content_en, None)
-    send_to_slack(args.channel, ja_title, args.url, summary_ja, primary_cat, s)
+    send_to_slack(args.channel, ja_title, args.url, bullets, primary_cat, s, source=source, published=published)
     print("Posted:", ja_title[:80])
     return 0
 

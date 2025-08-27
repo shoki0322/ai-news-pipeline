@@ -99,8 +99,10 @@ def main() -> int:
             )
             if source:
                 ja_title = f"[{source}] {ja_title}"
+            # 箇条書き要点に切り替え
+            points = summarize(content)
             s, primary_cat, _ = score_article(title, content, a.get("published", ""))
-            send_to_slack(args.channel, ja_title, link, summary_ja, primary_cat, s)
+            send_to_slack(args.channel, ja_title, link, points, primary_cat, s)
             sent += 1
             print(f"[{idx}/{len(targets)}] Sent: {ja_title[:60]} …")
             time.sleep(args.sleep)

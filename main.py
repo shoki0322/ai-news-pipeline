@@ -129,25 +129,21 @@ def run_pipeline(
         # Prefix source name to title if available
         if source:
             ja_title = f"[{source}] {ja_title}"
-        summary_ja = summarize(
-            content,
-            max_chars=summary_max_chars,
-            min_chars=summary_min_chars,
-            max_sentences=summary_max_sentences,
-        )
+        points = summarize(content)
 
         # Score
         s, primary_cat, _ = score_article(title, content, published)
 
-        save_to_notion(ja_title, link, summary_ja, published)
+        # Notion には要点を連結して保存
+        save_to_notion(ja_title, link, "\n".join(points), published)
         if not no_slack:
-            send_to_slack(slack_channel, ja_title, link, summary_ja, primary_cat, s)
+            send_to_slack(slack_channel, ja_title, link, points, primary_cat, s)
 
         processed.append(
             {
                 "title_ja": ja_title,
                 "url": link,
-                "summary_ja": summary_ja,
+                "summary_ja": "\n".join(points),
                 "published": published,
                 "source": source,
             }
