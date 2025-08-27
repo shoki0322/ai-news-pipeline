@@ -65,3 +65,33 @@ def translate_text_long(text: str, chunk_size: int = 3000) -> str:
     except Exception as e:
         print(f"Long translation error: {e}")
         return text
+
+
+def translate_text(text: str) -> str:
+    """汎用テキストを日本語へ翻訳（見出しではなく通常文）。
+    OpenAIが利用可能なら優先し、失敗時はGoogle翻訳にフォールバックする。
+    """
+    if not text:
+        return ""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        try:
+            client = OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a professional translator. Translate the following text to Japanese. Provide only the translation without any explanation."},
+                    {"role": "user", "content": text},
+                ],
+                temperature=0.3,
+            )
+            translated = response.choices[0].message.content
+            if translated:
+                return translated.strip()
+        except Exception as e:
+            print(f"OpenAI translation error: {e}, falling back to Google Translate")
+    try:
+        return GoogleTranslator(source="auto", target="ja").translate(text)
+    except Exception as e:
+        print(f"Google Translate error: {e}")
+        return text
