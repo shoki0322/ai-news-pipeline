@@ -23,7 +23,7 @@ def translate_headline(title_en: str, max_len: int = 60) -> str:
                 f"Title: {title_en}"
             )
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a professional Japanese news editor."},
                     {"role": "user", "content": prompt}

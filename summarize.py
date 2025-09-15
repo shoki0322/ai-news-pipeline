@@ -36,7 +36,7 @@ def summarize(text: str, max_items: int = 4) -> list[str]:
             )
             # Use Responses API to avoid parameter mismatch
             resp = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "You are a concise Japanese news summarizer."},
                     {"role": "user", "content": prompt},

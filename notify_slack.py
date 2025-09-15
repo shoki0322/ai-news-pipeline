@@ -106,12 +106,10 @@ def send_to_slack(
         parts.append(f"カテゴリ: *{category}*")
     if score is not None:
         parts.append(f"スコア: *{score}* /10")
+    if source:
+        parts.append(f"メディア: *{source}*")
     if parts:
         context_elements.append({"type": "mrkdwn", "text": " ・ ".join(parts)})
-    if source:
-        context_elements.append({"type": "mrkdwn", "text": f"元メディア: {source}"})
-    if published:
-        context_elements.append({"type": "mrkdwn", "text": f"公開日時: {published}"})
 
     # 要点を1つの文字列にまとめる
     bullets = "\n".join(points) if points else "（要約なし）"
@@ -171,3 +169,104 @@ def send_to_slack(
             print(f"Slack posted: channel={channel} title={title}")
     except Exception as e:
         print(f"Failed to send Slack message: {e}")
+
+
+def send_plain_text(channel: str, text: str) -> None:
+    """Send a plain text message to Slack without blocks.
+
+    This is used for cases where the caller prepares a fully formatted
+    Slack-friendly text (e.g., 4-part summary with fixed labels).
+    """
+    client = _get_slack_client()
+    if not client:
+        print("Slack env not set; skipping Slack notification.")
+        return
+    channel_id = _resolve_channel_id(client, channel)
+    if not channel_id:
+        return
+    try:
+        resp = client.chat_postMessage(
+            channel=channel_id,
+            text=text,
+            unfurl_links=False,
+            unfurl_media=False,
+        )
+        if resp and resp.get("ok"):
+            print(f"Slack posted (plain): channel={channel}")
+    except Exception as e:
+        print(f"Failed to send plain Slack message: {e}")
+
+
+def send_four_part_blocks(
+    channel: str,
+    title: str,
+    yasashii_lines: List[str],
+    points: List[str],
+    glossary: List[str],
+    url: str,
+) -> None:
+    """Post a 4-part Japanese summary to Slack using block kit.
+
+    - Header with title
+    - Section for やさしい要約 (lines joined with \n)
+    - Section for ポイント (each line should start with "- ")
+    - Section for 用語解説 (each line should start with "- ")
+    - Action button linking to the article
+    """
+    client = _get_slack_client()
+    if not client:
+        print("Slack env not set; skipping Slack notification.")
+        return
+
+    channel_id = _resolve_channel_id(client, channel)
+    if not channel_id:
+        return
+
+    def _ensure_bullets(lines: List[str]) -> List[str]:
+        out: List[str] = []
+        for ln in lines:
+            t = (ln or "").strip()
+            if not t:
+                continue
+            if not t.startswith("- "):
+                t = "- " + t.lstrip("・*- ")
+            out.append(t)
+        return out
+
+    points_fmt = _ensure_bullets(points)[:5]
+    glossary_fmt = _ensure_bullets(glossary)[:6]
+    yasashii_text = "\n".join([ln.strip() for ln in yasashii_lines if ln.strip()])
+    points_text = "\n".join(points_fmt) if points_fmt else "- 要点なし"
+    glossary_text = "\n".join(glossary_fmt) if glossary_fmt else "- 用語なし"
+
+    blocks: List[dict] = [
+        {"type": "header", "text": {"type": "plain_text", "text": title[:150], "emoji": False}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*やさしい要約*\n{yasashii_text}"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*ポイント*\n{points_text}"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"*用語解説*\n{glossary_text}"}},
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "📖 記事を読む"},
+                    "url": url,
+                    "style": "primary",
+                }
+            ],
+        },
+        {"type": "divider"},
+    ]
+
+    try:
+        resp = client.chat_postMessage(
+            channel=channel_id,
+            blocks=blocks,
+            text=title,
+            unfurl_links=False,
+            unfurl_media=False,
+        )
+        if resp and resp.get("ok"):
+            print(f"Slack posted (blocks): channel={channel} title={title[:40]}")
+    except Exception as e:
+        print(f"Failed to send four-part blocks: {e}")
