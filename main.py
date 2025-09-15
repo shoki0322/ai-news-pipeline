@@ -9,10 +9,14 @@ from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
 from fetch_articles import fetch_rss_articles, deduplicate
-from translate import translate_text
-from summarize import summarize
 from save_notion import save_to_notion, url_exists_in_notion
-from notify_slack import send_to_slack
+from notify_slack import send_four_part_blocks
+try:
+    # Utilities for GPT-4o 4-part summarization and parsing
+    from send_four_part import summarize_4o, parse_four_part
+except Exception:
+    summarize_4o = None  # type: ignore
+    parse_four_part = None  # type: ignore
 from score import score_article
 
 
@@ -68,6 +72,7 @@ def run_pipeline(
     summary_max_chars: int = 300,
     summary_min_chars: int = 220,
     summary_max_sentences: int = 4,
+    four_part: bool = True,
 ) -> List[Dict[str, str]]:
     with open(sources_path, "r", encoding="utf-8") as f:
         rss_sources = json.load(f)
@@ -124,30 +129,31 @@ def run_pipeline(
         if url_exists_in_notion(link):
             continue
 
-        from translate import translate_headline
-        ja_title = translate_headline(title)
-        # Prefix source name to title if available
-        if source:
-            ja_title = f"[{source}] {ja_title}"
-        points = summarize(content)
-
-        # Score
-        s, primary_cat, _ = score_article(title, content, published)
-
-        # Notion には要点を連結して保存
-        save_to_notion(ja_title, link, "\n".join(points), published)
-        if not no_slack:
-            send_to_slack(slack_channel, ja_title, link, points, primary_cat, s)
-
-        processed.append(
-            {
-                "title_ja": ja_title,
-                "url": link,
-                "summary_ja": "\n".join(points),
-                "published": published,
-                "source": source,
-            }
-        )
+        if four_part and summarize_4o and parse_four_part:
+            try:
+                # Use GPT-4o to produce 4-part text, then parse and send as blocks
+                fp_text = summarize_4o(title, content, link)
+                title_ja, yasashii, points, glossary = parse_four_part(fp_text)
+                # Score for context (not displayed in this layout)
+                s, primary_cat, _ = score_article(title, content, published)
+                # Save a compact body to Notion: combine やさしい要約 + ポイント
+                notion_body = "\n".join(yasashii + points)
+                save_to_notion(title_ja or title, link, notion_body or "(no summary)", published)
+                if not no_slack:
+                    send_four_part_blocks(slack_channel, title_ja or title, yasashii, points, glossary, link)
+                processed.append(
+                    {
+                        "title_ja": title_ja or title,
+                        "url": link,
+                        "summary_ja": notion_body,
+                        "published": published,
+                        "source": source,
+                    }
+                )
+                continue
+            except Exception as e:
+                print(f"four_part mode failed for one article, skipping: {e}")
+                continue
 
     # Save the latest processed datetime
     if latest_article_dt:
@@ -175,4 +181,5 @@ if __name__ == "__main__":
         summary_max_chars=args.summary_max_chars,
         summary_min_chars=args.summary_min_chars,
         summary_max_sentences=args.summary_max_sentences,
-    ) 
+        four_part=True,
+    )
