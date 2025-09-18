@@ -134,8 +134,6 @@ def run_pipeline(
                 # Use GPT-4o to produce 4-part text, then parse and send as blocks
                 fp_text = summarize_4o(title, content, link)
                 title_ja, yasashii, points, glossary = parse_four_part(fp_text)
-                # Score for context (not displayed in this layout)
-                s, primary_cat, _ = score_article(title, content, published)
                 # Save a compact body to Notion: combine やさしい要約 + ポイント
                 notion_body = "\n".join(yasashii + points)
                 save_to_notion(title_ja or title, link, notion_body or "(no summary)", published)
@@ -152,8 +150,33 @@ def run_pipeline(
                 )
                 continue
             except Exception as e:
-                print(f"four_part mode failed for one article, skipping: {e}")
-                continue
+                print(f"four_part mode failed for one article, falling back to classic summary: {e}")
+                # Fall through to classic pipeline below
+        # Classic pipeline (headline translation + bullet summarize)
+        try:
+            from translate import translate_headline
+            from summarize import summarize as classic_summarize
+            from notify_slack import send_to_slack
+        except Exception as ie:
+            print(f"Failed to import classic pipeline components: {ie}")
+            continue
+        ja_title = translate_headline(title)
+        if source:
+            ja_title = f"[{source}] {ja_title}"
+        points = classic_summarize(content)
+        s, primary_cat, _ = score_article(title, content, published)
+        save_to_notion(ja_title, link, "\n".join(points), published)
+        if not no_slack:
+            send_to_slack(slack_channel, ja_title, link, points, primary_cat, s)
+        processed.append(
+            {
+                "title_ja": ja_title,
+                "url": link,
+                "summary_ja": "\n".join(points),
+                "published": published,
+                "source": source,
+            }
+        )
 
     # Save the latest processed datetime
     if latest_article_dt:

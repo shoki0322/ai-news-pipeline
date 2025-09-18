@@ -3,6 +3,7 @@ import re
 import html
 from datetime import datetime, timezone
 from typing import List, Dict
+import urllib.request
 
 import feedparser
 from urllib.parse import urlparse
@@ -77,38 +78,71 @@ def _extract_entry_content(entry) -> str:
 
 def fetch_rss_articles(urls: List[str]) -> List[Dict[str, str]]:
     articles: List[Dict[str, str]] = []
-    for url in urls:
-        feed = feedparser.parse(url)
-        # Determine human-readable source name from feed metadata or fallback to domain
-        try:
-            source_title = getattr(getattr(feed, "feed", {}), "title", "")
-        except Exception:
-            source_title = ""
-        source_name = _normalize_source_name(url, source_title)
-        for entry in getattr(feed, "entries", []):
-            published_raw = entry.get("published") or entry.get("updated")
-            if published_raw:
-                try:
-                    # feedparser may parse .published_parsed as a time.struct_time
-                    if getattr(entry, "published_parsed", None):
-                        dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-                        published_iso = dt.isoformat()
-                    else:
-                        published_iso = published_raw
-                except Exception:
-                    published_iso = datetime.now(timezone.utc).isoformat()
-            else:
-                published_iso = datetime.now(timezone.utc).isoformat()
 
-            articles.append(
-                {
-                    "title": getattr(entry, "title", ""),
-                    "link": getattr(entry, "link", ""),
-                    "published": published_iso,
-                    "content": _extract_entry_content(entry),
-                    "source": source_name,
+    # Set a user agent to avoid being blocked
+    feedparser.USER_AGENT = "Mozilla/5.0 (compatible; AI-News-Pipeline/1.0; +http://example.com/bot)"
+
+    for url in urls:
+        try:
+            # Create a request with custom headers
+            request = urllib.request.Request(
+                url,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (compatible; AI-News-Pipeline/1.0; +http://example.com/bot)',
+                    'Accept': 'application/rss+xml, application/xml, text/xml, */*',
                 }
             )
+
+            # Try to fetch the feed with timeout
+            try:
+                response = urllib.request.urlopen(request, timeout=10)
+                feed = feedparser.parse(response.read())
+            except (urllib.error.HTTPError, urllib.error.URLError) as e:
+                print(f"Failed to fetch {url}: {e}")
+                continue
+            except Exception as e:
+                print(f"Unexpected error fetching {url}: {e}")
+                continue
+
+            # Check if feed parsing was successful
+            if hasattr(feed, 'bozo_exception') and feed.bozo_exception:
+                print(f"Warning: Feed parsing error for {url}: {feed.bozo_exception}")
+                # Try to continue if there are still entries
+                if not feed.entries:
+                    continue
+            # Determine human-readable source name from feed metadata or fallback to domain
+            try:
+                source_title = getattr(getattr(feed, "feed", {}), "title", "")
+            except Exception:
+                source_title = ""
+            source_name = _normalize_source_name(url, source_title)
+            for entry in getattr(feed, "entries", []):
+                published_raw = entry.get("published") or entry.get("updated")
+                if published_raw:
+                    try:
+                        # feedparser may parse .published_parsed as a time.struct_time
+                        if getattr(entry, "published_parsed", None):
+                            dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+                            published_iso = dt.isoformat()
+                        else:
+                            published_iso = published_raw
+                    except Exception:
+                        published_iso = datetime.now(timezone.utc).isoformat()
+                else:
+                    published_iso = datetime.now(timezone.utc).isoformat()
+
+                articles.append(
+                    {
+                        "title": getattr(entry, "title", ""),
+                        "link": getattr(entry, "link", ""),
+                        "published": published_iso,
+                        "content": _extract_entry_content(entry),
+                        "source": source_name,
+                    }
+                )
+        except Exception as e:
+            print(f"Error processing feed {url}: {e}")
+            continue
     return articles
 
 
