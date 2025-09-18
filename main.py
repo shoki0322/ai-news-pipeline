@@ -152,11 +152,11 @@ def run_pipeline(
             except Exception as e:
                 print(f"four_part mode failed for one article, falling back to classic summary: {e}")
                 # Fall through to classic pipeline below
-        # Classic pipeline (headline translation + bullet summarize)
+        # Classic pipeline (headline translation + bullet summarize), but keep Block Kit UI
         try:
             from translate import translate_headline
+            from translate import translate_text
             from summarize import summarize as classic_summarize
-            from notify_slack import send_to_slack
         except Exception as ie:
             print(f"Failed to import classic pipeline components: {ie}")
             continue
@@ -164,15 +164,33 @@ def run_pipeline(
         if source:
             ja_title = f"[{source}] {ja_title}"
         points = classic_summarize(content)
-        s, primary_cat, _ = score_article(title, content, published)
-        save_to_notion(ja_title, link, "\n".join(points), published)
+        # Build a simple "やさしい要約": translate first ~300 chars and split into 2 short lines
+        try:
+            easy_src = content[:600]
+            easy_ja = translate_text(easy_src)
+            # Split into sentences and keep 2 concise lines (~80 chars)
+            import re
+            sents = [s.strip() for s in re.split(r"[。．!?！？]", easy_ja) if s.strip()]
+            yasashii = []
+            for s in sents:
+                if len(yasashii) >= 2:
+                    break
+                if len(s) > 80:
+                    s = s[:80].rstrip()
+                yasashii.append(s)
+            if not yasashii:
+                yasashii = [ja_title]
+        except Exception:
+            yasashii = [ja_title]
+
+        save_to_notion(ja_title, link, "\n".join(yasashii + points), published)
         if not no_slack:
-            send_to_slack(slack_channel, ja_title, link, points, primary_cat, s)
+            send_four_part_blocks(slack_channel, ja_title, yasashii, points, glossary=[], url=link)
         processed.append(
             {
                 "title_ja": ja_title,
                 "url": link,
-                "summary_ja": "\n".join(points),
+                "summary_ja": "\n".join(yasashii + points),
                 "published": published,
                 "source": source,
             }

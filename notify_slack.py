@@ -204,6 +204,10 @@ def send_four_part_blocks(
     points: List[str],
     glossary: List[str],
     url: str,
+    *,
+    source: str | None = None,
+    published: str | None = None,
+    show_meta: bool = True,
 ) -> None:
     """Post a 4-part Japanese summary to Slack using block kit.
 
@@ -239,11 +243,21 @@ def send_four_part_blocks(
     points_text = "\n".join(points_fmt) if points_fmt else "- 要点なし"
     glossary_text = "\n".join(glossary_fmt) if glossary_fmt else "- 用語なし"
 
-    blocks: List[dict] = [
-        {"type": "header", "text": {"type": "plain_text", "text": title[:150], "emoji": False}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": f"*やさしい要約*\n{yasashii_text}"}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": f"*ポイント*\n{points_text}"}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": f"*用語解説*\n{glossary_text}"}},
+    blocks: List[dict] = []
+    if show_meta and (source or published):
+        meta_parts: list[str] = []
+        if source:
+            meta_parts.append(f"メディア: *{source}*")
+        if published:
+            meta_parts.append(f"公開: *{published}*")
+        if meta_parts:
+            blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": " ・ ".join(meta_parts)}]})
+
+    blocks.extend([
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"【タイトル】\n*{title[:150]}*"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"【やさしい要約】\n{yasashii_text}"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"【ポイント】\n{points_text}"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"【用語解説】\n{glossary_text}"}},
         {
             "type": "actions",
             "elements": [
@@ -256,7 +270,7 @@ def send_four_part_blocks(
             ],
         },
         {"type": "divider"},
-    ]
+    ])
 
     try:
         resp = client.chat_postMessage(

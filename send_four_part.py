@@ -17,9 +17,9 @@ FOUR_PART_PROMPT = """
 
 出力形式（必ずこの順・ラベル固定・空行なし）：
 【タイトル】
-記事の核心を表す短い見出し（20字以内目安）
+記事の核心を表す短い見出し（30字以内目安）
 【やさしい要約】
-専門用語を避け、誰でも理解できる平易な日本語で2〜3文。最初に「何が起きたか」、次に「なぜ重要か／何ができるか」を簡潔に述べる。各文は200〜250字目安で改行し、段落間に空行は入れない。
+専門用語を避け、誰でも理解できる平易な日本語で2〜3文。最初に「何が起きたか」、次に「なぜ重要か／何ができるか」を簡潔に述べる。各文は300〜400字目安で改行し、段落間に空行は入れない。
 【ポイント】
 重要点を3〜5個の箇条書き。「- 」で開始し、要点を具体的に。各ポイントはできるだけ情報量を持たせ、最大120字まで可。
 【用語解説】
@@ -34,8 +34,8 @@ FOUR_PART_PROMPT = """
 """.strip()
 
 
-def extract(url: str) -> tuple[str, str]:
-    """Fetch URL and return (title_en, content_en)."""
+def extract(url: str) -> tuple[str, str, str | None, str | None]:
+    """Fetch URL and return (title_en, content_en, source, published)."""
     resp = requests.get(
         url,
         timeout=25,
@@ -58,7 +58,12 @@ def extract(url: str) -> tuple[str, str]:
     for tag in soup(["script", "style", "noscript", "header", "footer", "svg", "img", "aside", "nav"]):
         tag.decompose()
     text = " ".join(soup.get_text(" ").split())
-    return title, text
+    # meta
+    og_site = soup.find("meta", property="og:site_name")
+    og_pub = soup.find("meta", property="article:published_time") or soup.find("meta", attrs={"name": "pubdate"})
+    source = og_site.get("content").strip() if og_site and og_site.get("content") else None
+    published = og_pub.get("content").strip() if og_pub and og_pub.get("content") else None
+    return title, text, source, published
 
 
 def summarize_4o(title_en: str, content_en: str, url: str) -> str:
@@ -153,13 +158,22 @@ def main() -> int:
     ap.add_argument("--channel", default=os.getenv("SLACK_CHANNEL", "#ai-news-test"))
     args = ap.parse_args()
 
-    title_en, content_en = extract(args.url)
+    title_en, content_en, source, published = extract(args.url)
     summary_text = summarize_4o(title_en, content_en, args.url)
     # Try to parse into blocks; fallback to plain text
     try:
         title_ja, yasashii, points, glossary = parse_four_part(summary_text)
         if title_ja:
-            send_four_part_blocks(args.channel, title_ja, yasashii, points, glossary, args.url)
+            send_four_part_blocks(
+                args.channel,
+                title_ja,
+                yasashii,
+                points,
+                glossary,
+                args.url,
+                source=source,
+                published=published,
+            )
             print("Sent summary to Slack (blocks).")
         else:
             send_plain_text(args.channel, summary_text)
