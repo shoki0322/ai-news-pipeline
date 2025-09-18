@@ -134,11 +134,31 @@ def run_pipeline(
                 # Use GPT-4o to produce 4-part text, then parse and send as blocks
                 fp_text = summarize_4o(title, content, link)
                 title_ja, yasashii, points, glossary = parse_four_part(fp_text)
+                # Compute score and labels for meta
+                s, primary_cat, _ = score_article(title, content, published)
+                # 2-level mapping: 重要 / 通常
+                score_label = "重要" if s >= 6 else "通常"
                 # Save a compact body to Notion: combine やさしい要約 + ポイント
                 notion_body = "\n".join(yasashii + points)
                 save_to_notion(title_ja or title, link, notion_body or "(no summary)", published)
                 if not no_slack:
-                    send_four_part_blocks(slack_channel, title_ja or title, yasashii, points, glossary, link)
+                    # Prefer domain as media label
+                    try:
+                        from urllib.parse import urlparse
+                        media_label = (urlparse(link).hostname or "").replace("www.", "")
+                    except Exception:
+                        media_label = source or None
+                    send_four_part_blocks(
+                        slack_channel,
+                        title_ja or title,
+                        yasashii,
+                        points,
+                        glossary,
+                        link,
+                        source=media_label,
+                        published=published,
+                        score_label=score_label,
+                    )
                 processed.append(
                     {
                         "title_ja": title_ja or title,
@@ -150,51 +170,8 @@ def run_pipeline(
                 )
                 continue
             except Exception as e:
-                print(f"four_part mode failed for one article, falling back to classic summary: {e}")
-                # Fall through to classic pipeline below
-        # Classic pipeline (headline translation + bullet summarize), but keep Block Kit UI
-        try:
-            from translate import translate_headline
-            from translate import translate_text
-            from summarize import summarize as classic_summarize
-        except Exception as ie:
-            print(f"Failed to import classic pipeline components: {ie}")
-            continue
-        ja_title = translate_headline(title)
-        if source:
-            ja_title = f"[{source}] {ja_title}"
-        points = classic_summarize(content)
-        # Build a simple "やさしい要約": translate first ~300 chars and split into 2 short lines
-        try:
-            easy_src = content[:600]
-            easy_ja = translate_text(easy_src)
-            # Split into sentences and keep 2 concise lines (~80 chars)
-            import re
-            sents = [s.strip() for s in re.split(r"[。．!?！？]", easy_ja) if s.strip()]
-            yasashii = []
-            for s in sents:
-                if len(yasashii) >= 2:
-                    break
-                if len(s) > 80:
-                    s = s[:80].rstrip()
-                yasashii.append(s)
-            if not yasashii:
-                yasashii = [ja_title]
-        except Exception:
-            yasashii = [ja_title]
-
-        save_to_notion(ja_title, link, "\n".join(yasashii + points), published)
-        if not no_slack:
-            send_four_part_blocks(slack_channel, ja_title, yasashii, points, glossary=[], url=link)
-        processed.append(
-            {
-                "title_ja": ja_title,
-                "url": link,
-                "summary_ja": "\n".join(yasashii + points),
-                "published": published,
-                "source": source,
-            }
-        )
+                print(f"four_part mode failed; skipping (policy: no GPT, no post): {e}")
+                continue
 
     # Save the latest processed datetime
     if latest_article_dt:

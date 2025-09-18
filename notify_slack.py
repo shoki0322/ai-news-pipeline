@@ -208,6 +208,7 @@ def send_four_part_blocks(
     source: str | None = None,
     published: str | None = None,
     show_meta: bool = True,
+    score_label: str | None = None,
 ) -> None:
     """Post a 4-part Japanese summary to Slack using block kit.
 
@@ -244,12 +245,14 @@ def send_four_part_blocks(
     glossary_text = "\n".join(glossary_fmt) if glossary_fmt else "- 用語なし"
 
     blocks: List[dict] = []
-    if show_meta and (source or published):
+    if show_meta and (source or published or score_label):
         meta_parts: list[str] = []
         if source:
-            meta_parts.append(f"メディア: *{source}*")
+            meta_parts.append(f"元メディア: *{source}*")
         if published:
             meta_parts.append(f"公開: *{published}*")
+        if score_label:
+            meta_parts.append(f"ニュース性: *{score_label}*")
         if meta_parts:
             blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": " ・ ".join(meta_parts)}]})
 
