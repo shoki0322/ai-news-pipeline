@@ -82,10 +82,10 @@ def run_pipeline(
     # Load last processed datetime
     last_processed = _load_last_processed()
     cutoff_datetime = last_processed
-    
-    # If no last_processed, use 24 hours ago as cutoff
+
+    # If no last_processed, use current time as cutoff (no old articles)
     if cutoff_datetime is None:
-        cutoff_datetime = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff_datetime = datetime.now(timezone.utc)
     
     # Track the latest article datetime
     latest_article_dt = None
@@ -135,9 +135,9 @@ def run_pipeline(
                 fp_text = summarize_4o(title, content, link)
                 title_ja, yasashii, points, glossary = parse_four_part(fp_text)
                 # Compute score and labels for meta
-                s, primary_cat, _ = score_article(title, content, published)
-                # 2-level mapping: 重要 / 通常
-                score_label = "重要" if s >= 6 else "通常"
+                s, _, _ = score_article(title, content, published)
+                # 2-level mapping: 全社共有 / 特定部署向け
+                score_label = "全社共有" if s >= 5 else "特定部署向け"
                 # Save a compact body to Notion: combine やさしい要約 + ポイント
                 notion_body = "\n".join(yasashii + points)
                 save_to_notion(title_ja or title, link, notion_body or "(no summary)", published)

@@ -252,7 +252,7 @@ def send_four_part_blocks(
         if published:
             meta_parts.append(f"公開: *{published}*")
         if score_label:
-            meta_parts.append(f"ニュース性: *{score_label}*")
+            meta_parts.append(f"重要度: *{score_label}*")
         if meta_parts:
             blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": " ・ ".join(meta_parts)}]})
 
