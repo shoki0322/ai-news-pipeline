@@ -90,11 +90,14 @@ def run_pipeline(
     # Track the latest article datetime
     latest_article_dt = None
     
-    # Filter articles based on cutoff datetime
+    # Filter articles based on cutoff datetime and max age (24h)
+    now_utc = datetime.now(timezone.utc)
+    max_age_threshold = now_utc - timedelta(days=1)
     filtered = []
     for a in articles:
         dt = _parse_to_utc(a.get("published", ""))
-        if dt and dt > cutoff_datetime:
+        # Include only if (1) newer than last processed AND (2) within last 24 hours
+        if dt and dt > cutoff_datetime and dt >= max_age_threshold:
             a["published"] = dt.isoformat()
             filtered.append(a)
             if latest_article_dt is None or dt > latest_article_dt:
